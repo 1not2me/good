@@ -4,10 +4,10 @@ import PyPDF2
 import requests
 from bs4 import BeautifulSoup
 
-import openai
+# קריאת מפתח ה-API מסודות
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
+# חילוץ טקסט מקובץ PDF
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
@@ -15,6 +15,7 @@ def extract_text_from_pdf(file):
         text += page.extract_text() or ""
     return text
 
+# חילוץ טקסט מקישור
 def extract_text_from_url(url):
     try:
         response = requests.get(url)
@@ -32,6 +33,7 @@ def get_token_limit(style):
         "bullet points": 1000
     }.get(style, 600)
 
+# סיכום טקסט בעזרת GPT
 def summarize_text(text, style="short"):
     prompt = f"Summarize the following text in a {style} style:\n\n{text}"
     max_tokens = get_token_limit(style)
@@ -43,6 +45,7 @@ def summarize_text(text, style="short"):
     )
     return response.choices[0].message.content
 
+# מענה לשאלות על הטקסט
 def answer_question(text, question):
     prompt = f"""Answer the following question based on the text below:\n
 Text: {text}\n\n
