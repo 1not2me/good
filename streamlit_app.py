@@ -4,8 +4,14 @@ import PyPDF2
 import requests
 from bs4 import BeautifulSoup
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+import openai
 
+client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+response = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[{"role": "user", "content": "Hello"}]
+)
 def extract_text_from_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
