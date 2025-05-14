@@ -1,101 +1,93 @@
-import os
-from dotenv import load_dotenv
+import streamlit as st
+from openai import OpenAI
 import PyPDF2
-from bs4 import BeautifulSoup
 import requests
-import openai
+from bs4 import BeautifulSoup
 
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-def extract_text_from_pdf(pdf_path):
+def extract_text_from_pdf(file):
+    reader = PyPDF2.PdfReader(file)
     text = ""
-    try:
-        with open(pdf_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            for page_num in range(len(reader.pages)):
-                page = reader.pages[page_num]
-                text += page.extract_text()
-    except FileNotFoundError:
-        return "שגיאה: קובץ PDF לא נמצא."
-    except Exception as e:
-        return f"שגיאה בעיבוד PDF: {e}"
+    for page in reader.pages:
+        text += page.extract_text() or ""
     return text
 
 def extract_text_from_url(url):
     try:
         response = requests.get(url)
-        response.raise_for_status()  # Raise an exception for bad status codes
         soup = BeautifulSoup(response.content, 'html.parser')
-        text_parts = soup.find_all('p')  # ברירת מחדל: חילוץ פסקאות, ניתן לשנות בהתאם לצורך
-        text = '\n'.join([part.get_text() for part in text_parts])
-        return text
-    except requests.exceptions.RequestException as e:
-        return f"שגיאה בהבאת URL: {e}"
+        paragraphs = soup.find_all('p')
+        return "\n".join([p.get_text() for p in paragraphs])
     except Exception as e:
-        return f"שגיאה בעיבוד דף אינטרנט: {e}"
+        return f"Error extracting text: {e}"
 
-def summarize_text_with_openai(text, summary_length="קצר", max_tokens=150):
-    prompt = f"תמצת את הטקסט הבא בצורה {summary_length}:"
-    try:
-        response = openai.Completion.create(
-            model="gpt-3.5-turbo-instruct",  # מודל מומלץ לטקסט פשוט
-            prompt=prompt + "\n\n" + text,
-            max_tokens=max_tokens,
-            n=1,
-            stop=None,
-            temperature=0.7,
-        )
-        if response.choices:
-            return response.choices[0].text.strip()
-        else:
-            return "לא הצלחתי ליצור סיכום."
-    except Exception as e:
-        return f"שגיאה בשירות OpenAI: {e}"
+# קביעת מספר tokens לפי סגנון הסיכום
+def get_token_limit(style):
+    return {
+        "short": 400,
+        "detailed": 800,
+        "bullet points": 1000
+    }.get(style, 600)
 
-def main():
-    source_type = input("הזן 'file' כדי להעלות קובץ או 'url' עבור כתובת אינטרנט: ").lower()
+def summarize_text(text, style="short"):
+    prompt = f"Summarize the following text in a {style} style:\n\n{text}"
+    max_tokens = get_token_limit(style)
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.5,
+        max_tokens=max_tokens
+    )
+    return response.choices[0].message.content
 
-    if source_type == 'file':
-        file_path = input("הזן את נתיב הקובץ (PDF או TXT): ")
-        if file_path.lower().endswith('.pdf'):
-            text = extract_text_from_pdf(file_path)
-        elif file_path.lower().endswith('.txt'):
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
-            except FileNotFoundError:
-                text = "שגיאה: קובץ TXT לא נמצא."
-            except Exception as e:
-                text = f"שגיאה בקריאת קובץ TXT: {e}"
-        else:
-            text = "שגיאה: פורמט קובץ לא נתמך. אנא בחר PDF או TXT."
-    elif source_type == 'url':
-        url = input("הזן את כתובת האינטרנט (URL): ")
+def answer_question(text, question):
+    prompt = f"""Answer the following question based on the text below:\n
+Text: {text}\n\n
+Question: {question}\n
+Answer:"""
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=300
+    )
+    return response.choices[0].message.content
+
+# ממשק המשתמש
+st.title("📄 AI Document Analyzer")
+
+source = st.radio("Choose document source:", ["Upload PDF/TXT", "Enter URL"])
+text = ""
+
+if source == "Upload PDF/TXT":
+    uploaded_file = st.file_uploader("Upload a file", type=["pdf", "txt"])
+    if uploaded_file:
+        if uploaded_file.name.endswith(".pdf"):
+            text = extract_text_from_pdf(uploaded_file)
+        elif uploaded_file.name.endswith(".txt"):
+            text = uploaded_file.read().decode("utf-8")
+
+elif source == "Enter URL":
+    url = st.text_input("Enter the webpage URL:")
+    if url:
         text = extract_text_from_url(url)
-    else:
-        print("קלט לא חוקי.")
-        return
 
-    if text and not text.startswith("שגיאה"):
-        print("\nטקסט שחולץ:")
-        print(text[:500] + "..." if len(text) > 500 else text) # הצגת חלק מהטקסט
-        summary_length = input("הזן את אורך הסיכום הרצוי (קצר/בינוני/מפורט): ").lower()
-        if summary_length == "קצר":
-            max_tokens = 150
-        elif summary_length == "בינוני":
-            max_tokens = 300
-        elif summary_length == "מפורט":
-            max_tokens = 500
+if text:
+    st.subheader("📚 Extracted Text (preview):")
+    st.text_area("Text Preview", value=text[:1000], height=200)
+
+    summary_style = st.selectbox("Choose summary style:", ["short", "detailed", "bullet points"])
+    if st.button("Summarize"):
+        summary = summarize_text(text, summary_style)
+        st.subheader("📝 Summary:")
+        st.write(summary)
+
+    st.subheader("❓ Ask a question about the document:")
+    user_question = st.text_input("Enter your question here:")
+    if st.button("Get Answer"):
+        if user_question:
+            answer = answer_question(text, user_question)
+            st.write("💬 Answer:", answer)
         else:
-            print("אורך סיכום לא חוקי, ברירת מחדל היא קצר.")
-            max_tokens = 150
-
-        summary = summarize_text_with_openai(text, summary_length=summary_length, max_tokens=max_tokens)
-        print("\nסיכום:")
-        print(summary)
-    else:
-        print(text)
-
-if __name__ == "__main__":
-    main()
+            st.warning("Please enter a question.")
