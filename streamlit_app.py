@@ -1,11 +1,11 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 import PyPDF2
 import requests
 from bs4 import BeautifulSoup
 
 # קריאת המפתח הסודי
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # חילוץ טקסט מקובץ PDF
 def extract_text_from_pdf(file):
@@ -28,13 +28,13 @@ def extract_text_from_url(url):
 # סיכום טקסט בעזרת GPT
 def summarize_text(text, style="short"):
     prompt = f"Summarize the following text in a {style} style:\n\n{text}"
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.5,
         max_tokens=600
     )
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content
 
 # מענה לשאלות על הטקסט
 def answer_question(text, question):
@@ -42,13 +42,13 @@ def answer_question(text, question):
 Text: {text}\n\n
 Question: {question}\n
 Answer:"""
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=300
     )
-    return response.choices[0].message["content"]
+    return response.choices[0].message.content
 
 # ממשק המשתמש
 st.title("📄 AI Document Analyzer")
